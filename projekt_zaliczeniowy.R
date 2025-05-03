@@ -108,5 +108,5 @@ corpus <- tm_map(corpus, removePunctuation)#usunięcie pozostałej interpunkcji
 corpus <- tm_map(corpus, stripWhitespace)#usunięcie dodatkowych spacji
 
 #Sprawdzanie
-corpus[1][1]
+corpus[[1]]
                                
