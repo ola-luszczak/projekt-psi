@@ -1,18 +1,3 @@
-# cel projektu:
-#stworzenie działającego skryptu w języku R, który analizuje dane tekstowe (z jednego
-#lub wielu plików .txt, .csv) 
-#przy pomocy algorytmów używanych podczas zajęć zidentyfikowanie i zbadanie trendów w danych tekstowych 
-#(np. eksploracja częstości słów, analiza sentymentu, klastrowanie, modelowanie tematów itp.)
-
-# WYMAGANIA TECHNICZNE PROJKTU
-
-#Analiza danych tekstowych powinna wykorzystywać przynajmniej jedną z omawianych technik:
-#np. analiza częstościsłów, analiza sentymentu, klastrowanie, itp.
-
-#Użytkownik powinien mieć możliwość uruchomienia analizy na dostarczonych danych (plikach).
-
-# W projekcie powinny znaleźć się elementy wizualizacji wyników (np. wykresy ggplot2, chmury słów).
-# Kod musi być czytelnie udokumentowany (komentarze, podział na sekcje).
 
 # Wymagane pakiety ----
 library(tm)             
@@ -32,6 +17,8 @@ library(RColorBrewer)
 library(cluster)       
 library(factoextra) 
 library(tcltk)  
+library(textstem)
+library(scales)
 
 #WCZYTANIE TEKSTU, USUNIĘCIE ZBĘDNYCH ZNAKÓW, CZYSZCZENIE DANYCH
 
@@ -49,15 +36,15 @@ corpus <- tm_map(corpus, content_transformer(function(x) iconv(x, to = "UTF-8", 
 #funkcja, która będzie zamieniać zbędne znaki na spacje
 toSpace <- content_transformer(function (x, pattern) gsub(pattern, " ", x))
 
-#???DO ZASTANOWIENIA CZY POTRZEBUJEMY WSZYSTKIE 
+
 #Usuwanie znaków, symboli, wzorców 
 corpus <- tm_map(corpus, toSpace, "[()\\[\\]]") # nawiasy kwadratowe i okrągłe
 corpus <- tm_map(corpus, toSpace, "[@#$&*%+\\/=|]")
-corpus <- tm_map(corpus, toSpace, "[\"'“”‘’„]") # cudzysłowy
+corpus <- tm_map(corpus, toSpace, "[\"'“”‘’„]") # cudzysłowy,apostrof
 corpus <- tm_map(corpus, toSpace, "[©]")
 corpus <- tm_map(corpus, toSpace, "[✔✗]")
 corpus <- tm_map(corpus, toSpace, "[ \t]{2,}") # tabulatory
-corpus <- tm_map(corpus, toSpace, "\\S+\\.(pl|com)\\b")
+corpus <- tm_map(corpus, toSpace, "\\S+\\.(pl|com)\\b")#źródła o domenach .com .pl
 corpus <- tm_map(corpus, toSpace, "http\\w*") #http i https
 
 
@@ -65,48 +52,165 @@ corpus <- tm_map(corpus, toSpace, "http\\w*") #http i https
 #CZYSZCZENIE DANYCH
 corpus <- tm_map(corpus, content_transformer(tolower))#zamiana na małe litery
 corpus <- tm_map(corpus, removeNumbers)#usunięcie liczb
-#usunięcie stop-słów 
-polish_stopwords <- c(
-  "a", "aby", "ach", "acz", "aczkolwiek", "aj", "albo", "ale", "alez", "ależ", "ani",
-  "az", "aż", "bardziej", "bardzo", "beda", "bedzie", "bez", "deda", "będą", "bede", "będę",
-  "będzie", "bo", "bowiem", "by", "byc", "być", "byl", "byla", "byli", "bylo", "byly", "był",
-  "była", "było", "były", "bynajmniej", "cala", "cali", "caly", "cała", "cały", "ci", "cie",
-  "ciebie", "cię", "co", "cokolwiek", "cos", "coś", "czasami", "czasem", "czemu", "czy",
-  "czyli", "daleko", "dla", "dlaczego", "dlatego", "do", "dobrze", "dokad", "dokąd", "dosc",
-  "dość", "duzo", "dużo", "dwa", "dwaj", "dwie", "dwoje", "dzis", "dzisiaj", "dziś", "gdy",
-  "gdyby", "gdyz", "gdyż", "gdzie", "gdziekolwiek", "gdzies", "gdzieś", "go", "i", "ich",
-  "ile", "im", "inna", "inne", "inny", "innych", "iz", "iż", "ja", "jak", "jakas", "jakaś",
-  "jakby", "jaki", "jakichs", "jakichś", "jakie", "jakis", "jakiś", "jakiz", "jakiż",
-  "jakkolwiek", "jako", "jakos", "jakoś", "ją", "je", "jeden", "jedna", "jednak", "jednakze",
-  "jednakże", "jedno", "jego", "jej", "jemu", "jesli", "jest", "jestem", "jeszcze", "jeśli",
-  "jezeli", "jeżeli", "juz", "już", "kazdy", "każdy", "kiedy", "kilka", "kims", "kimś", "kto",
-  "ktokolwiek", "ktora", "ktore", "ktorego", "ktorej", "ktory", "ktorych", "ktorym",
-  "ktorzy", "ktos", "ktoś", "która", "które", "którego", "której", "który", "których",
-  "którym", "którzy", "ku", "lat", "lecz", "lub", "ma", "mają", "mało", "mam", "mi", "miedzy",
-  "między", "mimo", "mna", "mną", "mnie", "moga", "mogą", "moi", "moim", "moj", "moja",
-  "moje", "moze", "mozliwe", "mozna", "może", "możliwe", "można", "mój", "mu", "musi", "my",
-  "na", "nad", "nam", "nami", "nas", "nasi", "nasz", "nasza", "nasze", "naszego", "naszych",
-  "natomiast", "natychmiast", "nawet", "nia", "nią", "nic", "nich", "nie", "niech", "niego",
-  "niej", "niemu", "nigdy", "nim", "nimi", "niz", "niż", "no", "o", "obok", "od", "około",
-  "on", "ona", "one", "oni", "ono", "oraz", "oto", "owszem", "pan", "pana", "pani", "po",
-  "pod", "podczas", "pomimo", "ponad", "poniewaz", "ponieważ", "powinien", "powinna",
-  "powinni", "powinno", "poza", "prawie", "przeciez", "przecież", "przed", "przede",
-  "przedtem", "przez", "przy", "roku", "rowniez", "również", "sam", "sama", "są", "sie",
-  "się", "skad", "skąd", "soba", "sobą", "sobie", "sposob", "sposób", "swoje", "ta", "tak",
-  "taka", "taki", "takie", "takze", "także", "tam", "te", "tego", "tej", "ten", "teraz",
-  "też", "to", "toba", "tobą", "tobie", "totez", "toteż", "totobą", "trzeba", "tu", "tutaj",
-  "twoi", "twoim", "twoj", "twoja", "twoje", "twój", "twym", "ty", "tych", "tylko", "tym",
-  "u", "w", "wam", "wami", "was", "wasz", "wasza", "wasze", "we", "według", "wiele", "wielu",
-  "więc", "więcej", "wlasnie", "właśnie", "wszyscy", "wszystkich", "wszystkie", "wszystkim",
-  "wszystko", "wtedy", "wy", "z", "za", "zaden", "zadna", "zadne", "zadnych", "zapewne",
-  "zawsze", "ze", "zeby", "zeznowu", "zł", "znow", "znowu", "znów", "zostal", "został",
-  "żaden", "żadna", "żadne", "żadnych", "że", "żeby"
-)
-corpus <- tm_map(corpus, removeWords, polish_stopwords)
-
+corpus <- tm_map(corpus, removeWords, stopwords("english"))#usunięcie stop-słów 
 corpus <- tm_map(corpus, removePunctuation)#usunięcie pozostałej interpunkcji
 corpus <- tm_map(corpus, stripWhitespace)#usunięcie dodatkowych spacji
 
 #Sprawdzanie
 corpus[[1]]
-                               
+
+#STEMMING
+
+corpus_copy <- corpus #korpus oryginalny
+
+corpus_stemmed <- tm_map(corpus, stemDocument)#korpus po stemmingu
+
+corpus_stemmed[[1]]
+
+#Stem completion
+
+#funkcja pomocnicza, dzieli tekst na słowa, uzupełnia rdzenie do pełnych wyrazów (do najdłuższego słowa o danym rdzeniu z tekstu bazowego), łączy z powrotem w tekst
+complete_stems <- content_transformer(function(x, dict) {
+  x <- unlist(strsplit(x, " "))                  
+  x <- stemCompletion(x, dictionary = corpus_copy, type="longest") 
+  paste(x, collapse = " ")                 
+})
+
+
+corpus_completed <- tm_map(corpus_stemmed, complete_stems, dict = corpus_copy)
+
+#usówanie NA
+corpus_completed <- tm_map(corpus_completed, toSpace, "NA")
+corpus_completed <- tm_map(corpus_completed, stripWhitespace)
+
+
+#tokenizacja DTM
+dtm <- DocumentTermMatrix(corpus_completed)
+dtm # informacje o macierzy
+inspect(dtm)
+dtm_m <- as.matrix(dtm)#konwertowanie macierzy dm do zwykłej macierzy
+
+dtm_m[1:5, 1:5]
+
+
+#Zliczanie częstość słów
+
+v <- sort(colSums(dtm_m), decreasing = TRUE) #zliczanie częstości i sortowanie od najczęstrzych
+dtm_df <- data.frame(word = names(v), freq = v) #tworzenie ramki danych (word=słowa, freq= ich częstości)
+head(dtm_df, 10) #wyświetlenie 10 najczęstrzych słów
+
+
+#Chmury słów dla każdego dokumentu
+
+for (i in 1:length(corpus)) {
+
+  dtm_i <- DocumentTermMatrix(VCorpus(VectorSource(corpus[[i]]$content)))#tokenizacja jeszcze raz oddzielnie dla każdego dokumentu
+  dtm_m_i <- as.matrix(dtm_i)
+  word_freq <- sort(colSums(dtm_m_i), decreasing = TRUE)
+  word_df <- data.frame(word = names(word_freq), freq = word_freq)
+  
+  # Tworzenie chmury słów
+  wordcloud(words = word_df$word, freq = word_df$freq, min.freq =4 , 
+            colors = brewer.pal(9, "Spectral"), 
+            main = paste("Chmura słów dla dokumentu", i))
+}
+
+#ANALIZA SENTYMENTU
+
+#wczytanie słowników bing i nrc 
+bing_path <- tk_choose.files()
+bing <- read_csv(bing_path)
+
+nrc_path <- tk_choose.files()
+nrc <- read_csv(nrc_path)
+
+afinn_path <- tk_choose.files()
+afinn <- read_csv(afinn_path)
+
+
+tidy_dtm<-tidy(dtm)
+
+#bing (positive/negative)
+
+bing_sentiment <- tidy_dtm %>%
+  inner_join(get_sentiments("bing"), by = c(term = "word"))
+
+sentiment_review_bing <- bing_sentiment %>%
+  count(document, sentiment) %>% #zliczanie ile pozytywnych i negatywnych słów w każdym dokumencie
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%  #zmiana danych tak, żeby mieć osobno kolumny dla słów pozytywnych i negatywnych w każdym dokumencie żeby łatwiej porównać czy tekst był bardziej pozytywny czy negatywny
+  mutate(sentiment_score = positive - negative) #nowa koluma która przedstawia ogólny wynik nastroju dokumentu
+
+
+print(head(sentiment_review_bing))
+
+
+#nrc (przypisanie do kategorii - przeliczamy procentowy udział emocji w tekstach)
+nrc_sentiment <- tidy_dtm %>%
+  inner_join(get_sentiments("nrc"), by = c(term = "word"),relationship = "many-to-many")
+
+nrc_sentiment_percent <- nrc_sentiment %>%
+  count(document, sentiment) %>%
+  group_by(document) %>%
+  mutate(percent = n / sum(n)) %>% #udział słów z danej kategorii w tekście
+  ungroup()
+
+
+#afinn (punktowanie sentymentu, wartości ujemne i dodatnie)
+afinn_sentiment <- tidy_dtm %>%
+  inner_join(get_sentiments("afinn"), by = c(term = "word"))
+
+sentiment_review_afinn <- afinn_sentiment %>%
+  group_by(document) %>%
+  summarise(sentiment_score = sum(value))
+
+print(head(sentiment_review_afinn))
+
+#WYKRESY
+
+#bing-wykres(który przedstawi łączny wynik sentymentu dla każdego dokumentu osobno)
+ggplot(sentiment_review_bing, aes(x = document, y = sentiment_score, fill = document)) +
+  geom_col(width = 0.5) +
+  theme_minimal() +
+  labs(title = "Łączny sentyment w dokumencie (BING)",
+       x = "Dokument", y = "Łączny sentyment")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+
+#wykresy nrc
+#wykresy oddzielne
+ggplot(nrc_sentiment_percent, aes(x = document, y = percent, fill = document)) +
+  geom_col(width = 0.5) +
+  facet_wrap(~ sentiment, scales = "free_y") +  # ~ wymusza utworzenie utworzenie osobnego wykresu dla każdej wartości sentymentu
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  theme_minimal() +
+  labs(
+    title = "Procentowy udział konkretnych emocji w dokumentach (NRC)",
+    x = "Dokument",
+    y = "Udział emocji (%)"
+  ) +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+#wykres zbiorczy
+ggplot(nrc_sentiment_percent, aes(x = document, y = percent, fill = sentiment)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Procentowy udział emocji w wypowiedziach polityków (NRC)",
+    x = "Polityk",
+    y = "Udział emocji (%)",
+    fill = "Emocja"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+#wykres afinn
+ggplot(sentiment_review_afinn, aes(x = document, y = sentiment_score, fill = document)) +
+  geom_col(width = 0.5) +
+  theme_minimal() +
+  labs(title = "Łączny sentyment w dokumencie (AFINN)", x = "Dokument", y = "Łączny sentyment")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
