@@ -52,7 +52,13 @@ corpus <- tm_map(corpus, toSpace, "http\\w*") #http i https
 #CZYSZCZENIE DANYCH
 corpus <- tm_map(corpus, content_transformer(tolower))#zamiana na małe litery
 corpus <- tm_map(corpus, removeNumbers)#usunięcie liczb
-corpus <- tm_map(corpus, removeWords, stopwords("english"))#usunięcie stop-słów 
+
+#usunięcie stop-słów 
+#stop słowa z pakietu tidytext
+custom_stopwords <- stop_words$word
+corpus <- tm_map(corpus, removeWords, custom_stopwords)
+
+
 corpus <- tm_map(corpus, removePunctuation)#usunięcie pozostałej interpunkcji
 corpus <- tm_map(corpus, stripWhitespace)#usunięcie dodatkowych spacji
 
@@ -83,6 +89,10 @@ corpus_completed <- tm_map(corpus_stemmed, complete_stems, dict = corpus_copy)
 corpus_completed <- tm_map(corpus_completed, toSpace, "NA")
 corpus_completed <- tm_map(corpus_completed, stripWhitespace)
 
+#ponowne usunięcie stop słów
+corpus_completed <- tm_map(corpus_completed, removeWords, custom_stopwords)
+corpus_completed <- tm_map(corpus_completed, stripWhitespace)
+
 
 #tokenizacja DTM
 dtm <- DocumentTermMatrix(corpus_completed)
@@ -93,12 +103,6 @@ dtm_m <- as.matrix(dtm)#konwertowanie macierzy dm do zwykłej macierzy
 dtm_m[1:5, 1:5]
 
 
-#Zliczanie częstość słów
-
-v <- sort(colSums(dtm_m), decreasing = TRUE) #zliczanie częstości i sortowanie od najczęstrzych
-dtm_df <- data.frame(word = names(v), freq = v) #tworzenie ramki danych (word=słowa, freq= ich częstości)
-head(dtm_df, 10) #wyświetlenie 10 najczęstrzych słów
-
 
 #Chmury słów dla każdego dokumentu
 
@@ -108,6 +112,12 @@ for (i in 1:length(corpus)) {
   dtm_m_i <- as.matrix(dtm_i)
   word_freq <- sort(colSums(dtm_m_i), decreasing = TRUE)
   word_df <- data.frame(word = names(word_freq), freq = word_freq)
+  
+  #zliczanie częstości słów
+  v <- sort(colSums(dtm_m_i), decreasing = TRUE) #zliczanie częstości i sortowanie od najczęstrzych
+  dtm_df <- data.frame(word = names(v), freq = v) #tworzenie ramki danych (word=słowa, freq= ich częstości)
+  print(head(dtm_df, 10)) #wyświetlenie 10 najczęstrzych słów
+  
   
   # Tworzenie chmury słów
   wordcloud(words = word_df$word, freq = word_df$freq, min.freq =4 , 
@@ -141,9 +151,6 @@ sentiment_review_bing <- bing_sentiment %>%
   mutate(sentiment_score = positive - negative) #nowa koluma która przedstawia ogólny wynik nastroju dokumentu
 
 
-print(head(sentiment_review_bing))
-
-
 #nrc (przypisanie do kategorii - przeliczamy procentowy udział emocji w tekstach)
 nrc_sentiment <- tidy_dtm %>%
   inner_join(get_sentiments("nrc"), by = c(term = "word"),relationship = "many-to-many")
@@ -163,7 +170,7 @@ sentiment_review_afinn <- afinn_sentiment %>%
   group_by(document) %>%
   summarise(sentiment_score = sum(value))
 
-print(head(sentiment_review_afinn))
+
 
 #WYKRESY
 
