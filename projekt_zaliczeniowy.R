@@ -39,7 +39,7 @@ toSpace <- content_transformer(function (x, pattern) gsub(pattern, " ", x))
 
 #Usuwanie znaków, symboli, wzorców 
 corpus <- tm_map(corpus, toSpace, "[()\\[\\]]") # nawiasy kwadratowe i okrągłe
-corpus <- tm_map(corpus, toSpace, "[@#$&*%+\\/=|]")
+corpus <- tm_map(corpus, toSpace, "[@#$&*%+\\/=|—-]")
 corpus <- tm_map(corpus, toSpace, "[\"'“”‘’„]") # cudzysłowy,apostrof
 corpus <- tm_map(corpus, toSpace, "[©]")
 corpus <- tm_map(corpus, toSpace, "[✔✗]")
@@ -221,3 +221,54 @@ ggplot(sentiment_review_afinn, aes(x = document, y = sentiment_score, fill = doc
   labs(title = "Łączny sentyment w dokumencie (AFINN)", x = "Dokument", y = "Łączny sentyment")+
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "bottom")
+
+
+
+
+#MODELOWANIE TEMATÓW
+#funkcja top_terms_by_topis_LDA - wczytanie tekstu (z wektora, kolumny tekstowej, lub z ramki danych), wizualizacja słów o najdiększej informatywności przy użyciu metody LDA, dla wyznaczonej liczby tematów
+
+top_terms_by_topic_LDA <- function(input_text, # wektor lub kolumna tekstowa z ramki danych
+                                   plot = TRUE, # domyślnie rysuje wykres
+                                   k = number_of_topics) # wyznaczona liczba k tematów
+{
+# usuwanie wszystkich pustych wierszy z macierzy częstości
+unique_indexes <- unique(dtm$i) # pobranie indeksów unikalnych wartości
+DTM <- dtm[unique_indexes,]    # pobranie z DTM podzbioru tylko tych unikalnych indeksów 
+  
+# LDA - ukryta alokacja dirichleta
+lda <- LDA(DTM, k = number_of_topics, control = list(seed = 1234))
+topics <- tidy(lda, matrix = "beta") # słowa/tematy w uporządkowanym formacie tidy
+  
+# dziesięć najczęstszych słów dla każdego tematu
+top_terms <- topics  %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) # uporządkowanie słów w malejącej kolejności informatywności
+ 
+
+# Rysowanie wykresu dziesięiu najczęstszych słów dla każdego tematu
+
+if (plot) {
+  top_terms %>%
+    mutate(term = reorder(term, beta)) %>%
+    ggplot(aes(term, beta, fill = factor(topic))) +
+    geom_col(show.legend = FALSE) +
+    facet_wrap(~ topic, scales = "free") +
+    labs(x = "Terminy", y = "β (ważność słowa w temacie)") +
+    coord_flip() +
+    theme_minimal() +
+    scale_fill_brewer(palette = "Spectral")
+} else {
+  return(top_terms)
+
+}
+}
+
+# Dziesięć słów o największej informatywności według tematu
+
+number_of_topics = 6
+top_terms_by_topic_LDA(dtm_df$word)
+
+
