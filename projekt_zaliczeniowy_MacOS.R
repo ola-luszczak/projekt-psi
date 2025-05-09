@@ -1,4 +1,5 @@
 
+
 # Wymagane pakiety ----
 library(tm)             
 library(tidytext)      
@@ -11,12 +12,11 @@ library(ggrepel)
 library(ggthemes)  
 library(wordcloud)    
 library(RColorBrewer) 
-library(tcltk)  
-
+library(scales)
 
 #WCZYTANIE TEKSTU, USUNIĘCIE ZBĘDNYCH ZNAKÓW, CZYSZCZENIE DANYCH
 
-folder_path <- tk_choose.dir()
+folder_path <- selectDirectory()
 
 #Wczytywanie wszystkich plików z wybranego folderu
 docs <- DirSource(folder_path)
@@ -103,7 +103,7 @@ dtm_m[1:5, 1:5]
 #Chmury słów dla każdego dokumentu
 
 for (i in 1:length(corpus)) {
-
+  
   word_freq <- sort(dtm_m[i, ], decreasing = TRUE)
   word_df <- data.frame(word = names(word_freq), freq = word_freq)
   
@@ -124,14 +124,9 @@ for (i in 1:length(corpus)) {
 #ANALIZA SENTYMENTU
 
 #wczytanie słowników bing i nrc 
-bing_path <- tk_choose.files()
-bing <- read_csv(bing_path)
-
-nrc_path <- tk_choose.files()
-nrc <- read_csv(nrc_path)
-
-afinn_path <- tk_choose.files()
-afinn <- read_csv(afinn_path)
+bing <- read_csv("/Users/marcin_pizlo/Desktop/bing.csv")
+nrc  <- read_csv("/Users/marcin_pizlo/Desktop/nrc.csv")
+afinn <- read_csv("/Users/marcin_pizlo/Desktop/afinn.csv")
 
 
 tidy_dtm<-tidy(dtm)
@@ -242,43 +237,41 @@ top_terms_by_topic_LDA <- function(dtm_input,
                                    plot = TRUE, # domyślnie rysuje wykres
                                    k = number_of_topics) # wyznaczona liczba k tematów
 {
-# usuwanie wszystkich pustych wierszy z macierzy częstości
-DTM <- dtm_input[unique(dtm_input$i), ]    # pobranie z DTM podzbioru tylko tych unikalnych indeksów 
+  # usuwanie wszystkich pustych wierszy z macierzy częstości
+  DTM <- dtm_input[unique(dtm_input$i), ]    # pobranie z DTM podzbioru tylko tych unikalnych indeksów 
   
-# LDA - ukryta alokacja dirichleta
-lda <- LDA(DTM, k = number_of_topics, control = list(seed = 1234))
-topics <- tidy(lda, matrix = "beta") # słowa/tematy w uporządkowanym formacie tidy
+  # LDA - ukryta alokacja dirichleta
+  lda <- LDA(DTM, k = number_of_topics, control = list(seed = 1234))
+  topics <- tidy(lda, matrix = "beta") # słowa/tematy w uporządkowanym formacie tidy
   
-# Wyodrębnienie dziesięciu słów o najwyższej wartości β (najbardziej charakterystycznych) dla każdego z tematów 
-top_terms <- topics  %>%
-  group_by(topic) %>%
-  top_n(10, beta) %>%
-  ungroup() %>%
-  arrange(topic, -beta) # uporządkowanie słów w malejącej kolejności informatywności
- 
-
-# Rysowanie wykresu dziesięiu najczęstszych słów dla każdego tematu
-
-if (plot) {
-  top_terms %>%
-    mutate(term = reorder_within(term, beta,topic)) %>%
-    ggplot(aes(term, beta, fill = factor(topic))) +
-    geom_col(show.legend = FALSE) +
-    facet_wrap(~ topic, scales = "free") +
-    scale_x_reordered() +
-    labs(x = "Terminy", y = "β (ważność słowa w temacie)", title = "Najbardziej informatywne słowa w tematach (LDA)") +
-    coord_flip() +
-    theme_minimal() +
-    scale_fill_brewer(palette = "Spectral")
-} else {
-  return(top_terms)
-
-}
+  # Wyodrębnienie dziesięciu słów o najwyższej wartości β (najbardziej charakterystycznych) dla każdego z tematów 
+  top_terms <- topics  %>%
+    group_by(topic) %>%
+    top_n(10, beta) %>%
+    ungroup() %>%
+    arrange(topic, -beta) # uporządkowanie słów w malejącej kolejności informatywności
+  
+  
+  # Rysowanie wykresu dziesięiu najczęstszych słów dla każdego tematu
+  
+  if (plot) {
+    top_terms %>%
+      mutate(term = reorder_within(term, beta,topic)) %>%
+      ggplot(aes(term, beta, fill = factor(topic))) +
+      geom_col(show.legend = FALSE) +
+      facet_wrap(~ topic, scales = "free") +
+      scale_x_reordered() +
+      labs(x = "Terminy", y = "β (ważność słowa w temacie)", title = "Najbardziej informatywne słowa w tematach (LDA)") +
+      coord_flip() +
+      theme_minimal() +
+      scale_fill_brewer(palette = "Spectral")
+  } else {
+    return(top_terms)
+    
+  }
 }
 
 # Dziesięć słów o największej informatywności według tematu
 
 number_of_topics = 6
 top_terms_by_topic_LDA(dtm)
-
-
