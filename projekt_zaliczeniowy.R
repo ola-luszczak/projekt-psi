@@ -3,22 +3,17 @@
 library(tm)             
 library(tidytext)      
 library(SnowballC) 
-library(SentimentAnalysis) 
 library(topicmodels)   
 library(dplyr)          
-library(stringr)
 library(tidyverse) 
-library(DT)
 library(ggplot2)   
 library(ggrepel) 
 library(ggthemes)  
 library(wordcloud)    
 library(RColorBrewer) 
-library(cluster)       
-library(factoextra) 
 library(tcltk)  
-library(textstem)
 library(scales)
+
 
 #WCZYTANIE TEKSTU, USUNIĘCIE ZBĘDNYCH ZNAKÓW, CZYSZCZENIE DANYCH
 
@@ -75,7 +70,8 @@ corpus_stemmed[[1]]
 
 #Stem completion
 
-#funkcja pomocnicza, dzieli tekst na słowa, uzupełnia rdzenie do pełnych wyrazów (do najdłuższego słowa o danym rdzeniu z tekstu bazowego), łączy z powrotem w tekst
+# Funkcja pomocnicza: dzieli tekst na słowa, uzupełnia zredukowane formy (rdzenie) do pełnych słów
+# na podstawie najdłuższego pasującego słowa w oryginalnym korpusie, a następnie skleja tekst z powrotem
 complete_stems <- content_transformer(function(x, dict) {
   x <- unlist(strsplit(x, " "))                  
   x <- stemCompletion(x, dictionary = corpus_copy, type="longest") 
@@ -85,7 +81,7 @@ complete_stems <- content_transformer(function(x, dict) {
 
 corpus_completed <- tm_map(corpus_stemmed, complete_stems, dict = corpus_copy)
 
-#usówanie NA
+#usuwanie NA
 corpus_completed <- tm_map(corpus_completed, toSpace, "NA")
 corpus_completed <- tm_map(corpus_completed, stripWhitespace)
 
@@ -95,10 +91,11 @@ corpus_completed <- tm_map(corpus_completed, stripWhitespace)
 
 
 #tokenizacja DTM
+#tworzenie macierzy dokument-termin
 dtm <- DocumentTermMatrix(corpus_completed)
 dtm # informacje o macierzy
 inspect(dtm)
-dtm_m <- as.matrix(dtm)#konwertowanie macierzy dm do zwykłej macierzy
+dtm_m <- as.matrix(dtm)#konwertowanie macierzy dtm do zwykłej macierzy
 
 dtm_m[1:5, 1:5]
 
@@ -108,13 +105,11 @@ dtm_m[1:5, 1:5]
 
 for (i in 1:length(corpus)) {
 
-  dtm_i <- DocumentTermMatrix(VCorpus(VectorSource(corpus[[i]]$content)))#tokenizacja jeszcze raz oddzielnie dla każdego dokumentu
-  dtm_m_i <- as.matrix(dtm_i)
-  word_freq <- sort(colSums(dtm_m_i), decreasing = TRUE)
+  word_freq <- sort(dtm_m[i, ], decreasing = TRUE)
   word_df <- data.frame(word = names(word_freq), freq = word_freq)
   
   #zliczanie częstości słów
-  v <- sort(colSums(dtm_m_i), decreasing = TRUE) #zliczanie częstości i sortowanie od najczęstrzych
+  v <- sort(dtm_m[i, ], decreasing = TRUE) #zliczanie częstości i sortowanie od najczęstrzych
   dtm_df <- data.frame(word = names(v), freq = v) #tworzenie ramki danych (word=słowa, freq= ich częstości)
   print(head(dtm_df, 10)) #wyświetlenie 10 najczęstrzych słów
   
@@ -123,6 +118,8 @@ for (i in 1:length(corpus)) {
   wordcloud(words = word_df$word, freq = word_df$freq, min.freq =4 , 
             colors = brewer.pal(9, "Spectral"), 
             main = paste("Chmura słów dla dokumentu", i))
+  # Dodanie tytułu z nazwą pliku
+  title(main = paste0("Chmura słów: ", basename(docs$filelist[i])))
 }
 
 #ANALIZA SENTYMENTU
@@ -150,10 +147,17 @@ sentiment_review_bing <- bing_sentiment %>%
   pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%  #zmiana danych tak, żeby mieć osobno kolumny dla słów pozytywnych i negatywnych w każdym dokumencie żeby łatwiej porównać czy tekst był bardziej pozytywny czy negatywny
   mutate(sentiment_score = positive - negative) #nowa koluma która przedstawia ogólny wynik nastroju dokumentu
 
+#teraz neutralizujemy różnice wynikające z długości tekstów
+total_words_bing <- tidy_dtm %>%
+  group_by(document) %>%
+  summarise(total_words = n())
 
-#nrc (przypisanie do kategorii - przeliczamy procentowy udział emocji w tekstach)
+sentiment_review_bing <- left_join(sentiment_review_bing, total_words_bing, by = "document") %>%
+  mutate(score_avg = sentiment_score / total_words)
+
+#nrc (przypisanie słów do kategorii ze względu na emocje - obliczamy procentowy udział emocji w dokumentach)
 nrc_sentiment <- tidy_dtm %>%
-  inner_join(get_sentiments("nrc"), by = c(term = "word"),relationship = "many-to-many")
+  inner_join(get_sentiments("nrc"), by = c(term = "word"))
 
 nrc_sentiment_percent <- nrc_sentiment %>%
   count(document, sentiment) %>%
@@ -170,6 +174,13 @@ sentiment_review_afinn <- afinn_sentiment %>%
   group_by(document) %>%
   summarise(sentiment_score = sum(value))
 
+#teraz uśredniamy, żeby zneutralizować różnice w długości tekstów
+total_words_afinn <- tidy_dtm %>%
+  group_by(document) %>%
+  summarise(total_words = n())
+
+sentiment_review_afinn <- left_join(sentiment_review_afinn, total_words_afinn, by = "document") %>%
+  mutate(score_avg = sentiment_score / total_words)
 
 
 #WYKRESY
@@ -228,19 +239,18 @@ ggplot(sentiment_review_afinn, aes(x = document, y = sentiment_score, fill = doc
 #MODELOWANIE TEMATÓW
 #funkcja top_terms_by_topis_LDA - wczytanie tekstu (z wektora, kolumny tekstowej, lub z ramki danych), wizualizacja słów o najdiększej informatywności przy użyciu metody LDA, dla wyznaczonej liczby tematów
 
-top_terms_by_topic_LDA <- function(input_text, # wektor lub kolumna tekstowa z ramki danych
+top_terms_by_topic_LDA <- function(dtm_input, 
                                    plot = TRUE, # domyślnie rysuje wykres
                                    k = number_of_topics) # wyznaczona liczba k tematów
 {
 # usuwanie wszystkich pustych wierszy z macierzy częstości
-unique_indexes <- unique(dtm$i) # pobranie indeksów unikalnych wartości
-DTM <- dtm[unique_indexes,]    # pobranie z DTM podzbioru tylko tych unikalnych indeksów 
+DTM <- dtm_input[unique(dtm_input$i), ]    # pobranie z DTM podzbioru tylko tych unikalnych indeksów 
   
 # LDA - ukryta alokacja dirichleta
 lda <- LDA(DTM, k = number_of_topics, control = list(seed = 1234))
 topics <- tidy(lda, matrix = "beta") # słowa/tematy w uporządkowanym formacie tidy
   
-# dziesięć najczęstszych słów dla każdego tematu
+# Wyodrębnienie dziesięciu słów o najwyższej wartości β (najbardziej charakterystycznych) dla każdego z tematów 
 top_terms <- topics  %>%
   group_by(topic) %>%
   top_n(10, beta) %>%
@@ -252,11 +262,12 @@ top_terms <- topics  %>%
 
 if (plot) {
   top_terms %>%
-    mutate(term = reorder(term, beta)) %>%
+    mutate(term = reorder_within(term, beta,topic)) %>%
     ggplot(aes(term, beta, fill = factor(topic))) +
     geom_col(show.legend = FALSE) +
     facet_wrap(~ topic, scales = "free") +
-    labs(x = "Terminy", y = "β (ważność słowa w temacie)") +
+    scale_x_reordered() +
+    labs(x = "Terminy", y = "β (ważność słowa w temacie)", title = "Najbardziej informatywne słowa w tematach (LDA)") +
     coord_flip() +
     theme_minimal() +
     scale_fill_brewer(palette = "Spectral")
@@ -269,6 +280,6 @@ if (plot) {
 # Dziesięć słów o największej informatywności według tematu
 
 number_of_topics = 6
-top_terms_by_topic_LDA(dtm_df$word)
+top_terms_by_topic_LDA(dtm)
 
 
